@@ -1,3 +1,8 @@
+// This code belongs to the blog post "CipherInputStream for AEAD modes is broken in JDK7 (GCM, EAX, etc.)"
+
+// http://blog.philippheckel.com/2014/03/01/cipherinputstream-for-aead-modes-is-broken-in-jdk7-gcm/
+// March 2014, Philipp C. Heckel
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
