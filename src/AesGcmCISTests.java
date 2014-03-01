@@ -35,14 +35,14 @@ public class AesGcmCISTests {
 	}
 	
 	public static void main(String args[]) throws Exception {
-		System.out.println("-----------------------------------------------------------------");
+		System.out.println("----------------------------------------------------------------------------------");
 
 		testJavaxCipherWithAesGcm();
 		testJavaxCipherInputStreamWithAesGcm();
 		testJavaxCipherInputStreamWithAesGcmFixed();
 		testBouncyCastleCipherInputStreamWithAesGcm();
 
-		System.out.println("-----------------------------------------------------------------");
+		System.out.println("----------------------------------------------------------------------------------");
 	}
 	
 	public static void testJavaxCipherWithAesGcm() throws InvalidKeyException, InvalidAlgorithmParameterException, IOException, NoSuchAlgorithmException,
@@ -71,10 +71,10 @@ public class AesGcmCISTests {
 			//  The code below is not executed.
 			//
 			
-			System.out.println("javac.crypto.Cipher:                             NOT OK");
+			System.out.println("javac.crypto.Cipher:                             NOT OK, tampering not detected");
 		}
 		catch (BadPaddingException e) {		
-			System.out.println("javac.crypto.Cipher:                             OK");
+			System.out.println("javac.crypto.Cipher:                             OK, tampering detected");
 		}
 	}	
 	
@@ -103,12 +103,12 @@ public class AesGcmCISTests {
 			//  The decrypted payload is "Confirm 900$ pay" (not: "Confirm 100$ pay")
 			//
 
-			System.out.println("javac.crypto.CipherInputStream:                  NOT OK");
-			System.out.println("  Original plaintext:                            " + new String(originalPlaintext, "ASCII"));
-			System.out.println("  Decrypted plaintext:                           " + new String(decryptedPlaintext, "ASCII"));
+			System.out.println("javac.crypto.CipherInputStream:                  NOT OK, tampering not detected");
+			System.out.println("  - Original plaintext:                             - " + new String(originalPlaintext, "ASCII"));
+			System.out.println("  - Decrypted plaintext:                            - " + new String(decryptedPlaintext, "ASCII"));
 		}
 		catch (Exception e) {
-			System.out.println("javac.crypto.CipherInputStream:                  OK");
+			System.out.println("javac.crypto.CipherInputStream:                  OK, tampering detected");
 		}
 	}	
 
@@ -139,10 +139,10 @@ public class AesGcmCISTests {
 			//  The code below is not executed.
 			//
 			
-			System.out.println("QuickFixDemoCipherInputStream:                   NOT OK");				
+			System.out.println("QuickFixDemoCipherInputStream:                   NOT OK, tampering not detected");				
 		}
 		catch (QuickFixDemoCipherInputStream.QuickFixDemoInvalidCipherTextIOException e) {
-			System.out.println("QuickFixDemoCipherInputStream:                   OK");				
+			System.out.println("QuickFixDemoCipherInputStream:                   OK, tampering detected");				
 		}
 	}
 	
@@ -159,7 +159,7 @@ public class AesGcmCISTests {
 		
 		// Decrypt with BouncyCastle implementation of CipherInputStream
 		AEADBlockCipher cipher = new GCMBlockCipher(new AESEngine()); 
-		KeyParameter secretKey = new KeyParameter(createRandomArray(16));		
+		KeyParameter secretKey = new KeyParameter(randomKey);		
 		cipher.init(false, new AEADParameters(secretKey, 128, randomIv));
 		
 		try {
@@ -171,10 +171,10 @@ public class AesGcmCISTests {
 			//  however is that it is incompatible with the standard JCE Cipher class from the javax.crypto 
 			//  package. The new interface AEADBlockCipher must be used. The code below is not executed.		
 
-			System.out.println("org.bouncycastle.crypto.io.CipherInputStream:    NOT OK");						
+			System.out.println("org.bouncycastle.crypto.io.CipherInputStream:    NOT OK, tampering not detected");						
 		}
 		catch (InvalidCipherTextIOException e) {
-			System.out.println("org.bouncycastle.crypto.io.CipherInputStream:    OK");						
+			System.out.println("org.bouncycastle.crypto.io.CipherInputStream:    OK, tampering detected");						
 		}
 	}
 
