@@ -8,3 +8,8 @@ task(run, dependsOn: "classes", type: JavaExec) {
 	main = "AesGcmCISTests"
 	classpath = sourceSets.main.runtimeClasspath
 }	
+
+task wrapper(type: Wrapper) {
+	gradleVersion = '1.11'
+	jarFile = 'gradle/wrapper/wrapper.jar'
+}
