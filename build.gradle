@@ -1,4 +1,5 @@
 apply plugin: 'java'
+apply plugin: 'eclipse'
 	
 dependencies.compile "org.bouncycastle:bcprov-ext-jdk15on:1.50"            
 repositories.mavenCentral()
