@@ -6,7 +6,7 @@ repositories.mavenCentral()
 sourceSets.main.java.srcDir 'src'
 
 task(run, dependsOn: "classes", type: JavaExec) {
-	main = "AesGcmCISTests"
+	main = "CipherInputStreamIssuesTests"
 	classpath = sourceSets.main.runtimeClasspath
 }	
 
