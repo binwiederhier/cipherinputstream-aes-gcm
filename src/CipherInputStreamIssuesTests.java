@@ -47,6 +47,8 @@ public class CipherInputStreamIssuesTests {
 		testC_JavaxCipherInputStreamWithAesGcmFixed();
 		testD_BouncyCastleCipherInputStreamWithAesGcm();
 		testE_BouncyCastleCipherInputStreamWithAesGcmLongPlaintext();
+		testF_BouncyCastleFixedCipherInputStreamWithAesGcmLongPlaintextNoTampering();
+		testG_BouncyCastleFixedCipherInputStreamWithAesGcmLongPlaintextAndTampering();
 
 		System.out.println("----------------------------------------------------------------------------------");
 	}
@@ -77,10 +79,10 @@ public class CipherInputStreamIssuesTests {
 			//  The code below is not executed.
 			//
 			
-			System.out.println("Test A: javac.crypto.Cipher:                             NOT OK, tampering not detected");
+			System.out.println("Test A: javac.crypto.Cipher:                                 NOT OK, tampering not detected");
 		}
 		catch (BadPaddingException e) {		
-			System.out.println("Test A: javac.crypto.Cipher:                             OK, tampering detected");
+			System.out.println("Test A: javac.crypto.Cipher:                                 OK, tampering detected");
 		}
 	}	
 	
@@ -109,12 +111,12 @@ public class CipherInputStreamIssuesTests {
 			//  The decrypted payload is "Confirm 900$ pay" (not: "Confirm 100$ pay")
 			//
 
-			System.out.println("Test B: javac.crypto.CipherInputStream:                  NOT OK, tampering not detected");
-			System.out.println("        - Original plaintext:                            - " + new String(originalPlaintext, "ASCII"));
-			System.out.println("        - Decrypted plaintext:                           - " + new String(decryptedPlaintext, "ASCII"));
+			System.out.println("Test B: javac.crypto.CipherInputStream:                      NOT OK, tampering not detected");
+			System.out.println("        - Original plaintext:                                - " + new String(originalPlaintext, "ASCII"));
+			System.out.println("        - Decrypted plaintext:                               - " + new String(decryptedPlaintext, "ASCII"));
 		}
 		catch (Exception e) {
-			System.out.println("Test B: javac.crypto.CipherInputStream:                  OK, tampering detected");
+			System.out.println("Test B: javac.crypto.CipherInputStream:                      OK, tampering detected");
 		}
 	}	
 
@@ -145,10 +147,10 @@ public class CipherInputStreamIssuesTests {
 			//  The code below is not executed.
 			//
 			
-			System.out.println("Test C: QuickFixDemoCipherInputStream:                   NOT OK, tampering not detected");				
+			System.out.println("Test C: QuickFixDemoCipherInputStream:                       NOT OK, tampering not detected");				
 		}
 		catch (QuickFixDemoCipherInputStream.QuickFixDemoInvalidCipherTextIOException e) {
-			System.out.println("Test C: QuickFixDemoCipherInputStream:                   OK, tampering detected");				
+			System.out.println("Test C: QuickFixDemoCipherInputStream:                       OK, tampering detected");				
 		}
 	}
 	
@@ -176,10 +178,10 @@ public class CipherInputStreamIssuesTests {
 			//  however is that it is incompatible with the standard JCE Cipher class from the javax.crypto 
 			//  package. The new interface AEADBlockCipher must be used. The code below is not executed.		
 
-			System.out.println("Test D: org.bouncycastle.crypto.io.CipherInputStream:    NOT OK, tampering not detected");						
+			System.out.println("Test D: org.bouncycastle.crypto.io.CipherInputStream:        NOT OK, tampering not detected");						
 		}
 		catch (InvalidCipherTextIOException e) {
-			System.out.println("Test D: org.bouncycastle.crypto.io.CipherInputStream:    OK, tampering detected");						
+			System.out.println("Test D: org.bouncycastle.crypto.io.CipherInputStream:        OK, tampering detected");						
 		}
 	}
 	
@@ -202,11 +204,71 @@ public class CipherInputStreamIssuesTests {
 			//  The only difference to the example above is that the plaintext is now 4080 bytes long! For 4079 bytes plaintexts,
 			//  everything works just fine.
 
-			System.out.println("Test E: org.bouncycastle.crypto.io.CipherInputStream:    OK, throws no exception");						
+			System.out.println("Test E: org.bouncycastle.crypto.io.CipherInputStream:        OK, throws no exception");						
 		}
 		catch (IOException e) {
-			System.out.println("Test E: org.bouncycastle.crypto.io.CipherInputStream:    NOT OK, throws the following exception:");
-			e.printStackTrace();
+			System.out.println("Test E: org.bouncycastle.crypto.io.CipherInputStream:        NOT OK throws: "+e.getMessage());
+		}
+	}	
+	
+	public static void testF_BouncyCastleFixedCipherInputStreamWithAesGcmLongPlaintextNoTampering() throws InvalidKeyException, InvalidAlgorithmParameterException, IOException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException {
+		// Encrypt (not interesting in this example)
+		byte[] randomKey = createRandomArray(16);
+		byte[] randomIv = createRandomArray(16);		
+		byte[] originalPlaintext = createRandomArray(4080); // <<<< 4080 bytes fails, 4079 bytes works! 	
+		byte[] originalCiphertext = encryptWithAesGcm(originalPlaintext, randomKey, randomIv);
+		
+		// Decrypt with BouncyCastle implementation of CipherInputStream
+		AEADBlockCipher cipher = new GCMBlockCipher(new AESEngine()); 
+		cipher.init(false, new AEADParameters(new KeyParameter(randomKey), 128, randomIv));
+		
+		try {
+			byte[] decryptedPlaintext = readFromStream(new BcFixedCipherInputStream(new ByteArrayInputStream(originalCiphertext), cipher));
+			//             ^^^^^^^^^^^^^^^ INTERESTING PART ^^^^^^^^^^^^^^^^	
+			//
+			//  In this example, the BouncyCastle implementation of the CipherInputStream throws an ArrayIndexOutOfBoundsException.
+			//  The only difference to the example above is that the plaintext is now 4080 bytes long! For 4079 bytes plaintexts,
+			//  everything works just fine.
+
+			if (!Arrays.areEqual(originalPlaintext, decryptedPlaintext)) {
+				System.out.println("Test F: Fixed org.bouncycastle.crypto.io.CipherInputStream:  NOT OK, original plaintext does not match.");
+			}
+			else {
+				System.out.println("Test F: Fixed org.bouncycastle.crypto.io.CipherInputStream:  OK, throws no exception");
+			}
+		}
+		catch (IOException e) {
+			System.out.println("Test F: Fixed org.bouncycastle.crypto.io.CipherInputStream:  NOT OK, throws: "+e.getMessage());
+		}
+	}	 
+	
+	public static void testG_BouncyCastleFixedCipherInputStreamWithAesGcmLongPlaintextAndTampering() throws InvalidKeyException, InvalidAlgorithmParameterException, IOException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException {
+		// Encrypt (not interesting in this example)
+		byte[] randomKey = createRandomArray(16);
+		byte[] randomIv = createRandomArray(16);		
+		byte[] originalPlaintext = createRandomArray(4080); // <<<< 4080 bytes fails, 4079 bytes works! 	
+		byte[] originalCiphertext = encryptWithAesGcm(originalPlaintext, randomKey, randomIv);
+		
+		// Attack / alter ciphertext (an attacker would do this!) 
+		byte[] alteredCiphertext = Arrays.clone(originalCiphertext);		
+		alteredCiphertext[8] = (byte) (alteredCiphertext[8] ^ 0x08); // <<< Change 100$ to 900$		
+		
+		// Decrypt with BouncyCastle implementation of CipherInputStream
+		AEADBlockCipher cipher = new GCMBlockCipher(new AESEngine()); 
+		cipher.init(false, new AEADParameters(new KeyParameter(randomKey), 128, randomIv));
+		
+		try {
+			readFromStream(new BcFixedCipherInputStream(new ByteArrayInputStream(alteredCiphertext), cipher));
+			//             ^^^^^^^^^^^^^^^ INTERESTING PART ^^^^^^^^^^^^^^^^	
+			//
+			//  In this example, the the BouncyCastle implementation of 1.50 (will be updated in 1.51) of the 
+			//  CipherInputStream is used. It fixes the ArrayIndexOutOfBoundsException and now works also
+			//  for longer plaintexts. The code below is not executed.
+
+			System.out.println("Test G: Fixed org.bouncycastle.crypto.io.CipherInputStream:  NOT OK, tampering not detected");						
+		}
+		catch (InvalidCipherTextIOException e) {
+			System.out.println("Test G: Fixed org.bouncycastle.crypto.io.CipherInputStream:  OK, tampering detected");
 		}
 	}	
 
