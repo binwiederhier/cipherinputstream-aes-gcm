@@ -7,6 +7,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
@@ -24,11 +25,11 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 import org.bouncycastle.crypto.engines.AESEngine;
+import org.bouncycastle.crypto.io.InvalidCipherTextIOException;
 import org.bouncycastle.crypto.modes.AEADBlockCipher;
 import org.bouncycastle.crypto.modes.GCMBlockCipher;
 import org.bouncycastle.crypto.params.AEADParameters;
 import org.bouncycastle.crypto.params.KeyParameter;
-import org.bouncycastle.crypto.io.InvalidCipherTextIOException;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.util.Arrays;
 
@@ -41,15 +42,20 @@ public class CipherInputStreamIssuesTests {
 	
 	public static void main(String args[]) throws Exception {
 		System.out.println("----------------------------------------------------------------------------------");
-
+		System.out.println();
+		System.out.println("To ensure tests A, B, D and E succeed run with JRE 8u25 (or later) or 7u71 (or later)");
+		System.out.println("Obsolete tests (temporary workarounds not needed due to fixes in JRE 8u25/7u71 and BC 1.51) were removed");
+		System.out.println();
+		
 		testA_JavaxCipherWithAesGcm();
 		testB_JavaxCipherInputStreamWithAesGcm();
-		testC_JavaxCipherInputStreamWithAesGcmFixed();
 		testD_BouncyCastleCipherInputStreamWithAesGcm();
 		testE_BouncyCastleCipherInputStreamWithAesGcmLongPlaintext();
-		testF_BouncyCastleFixedCipherInputStreamWithAesGcmLongPlaintextNoTampering();
-		testG_BouncyCastleFixedCipherInputStreamWithAesGcmLongPlaintextAndTampering();
-
+		testH_JavaxCipherInputStreamWithAesGcmBadRead();
+		testI_BouncyCastleCipherInputStreamWithAesGcmBadRead();
+		testJ_FullAEADSupportCipherInputStreamWithAesGcmBadRead();
+		testK_FullAEADSupportCipherInputStreamWithAesGcm();
+		
 		System.out.println("----------------------------------------------------------------------------------");
 	}
 	
@@ -79,10 +85,10 @@ public class CipherInputStreamIssuesTests {
 			//  The code below is not executed.
 			//
 			
-			System.out.println("Test A: javac.crypto.Cipher:                                 NOT OK, tampering not detected");
+			System.out.println("Test A: javax.crypto.Cipher:                                 NOT OK, tampering not detected");
 		}
 		catch (BadPaddingException e) {		
-			System.out.println("Test A: javac.crypto.Cipher:                                 OK, tampering detected");
+			System.out.println("Test A: javax.crypto.Cipher:                                 OK, tampering detected");
 		}
 	}	
 	
@@ -119,40 +125,6 @@ public class CipherInputStreamIssuesTests {
 			System.out.println("Test B: javac.crypto.CipherInputStream:                      OK, tampering detected");
 		}
 	}	
-
-	public static void testC_JavaxCipherInputStreamWithAesGcmFixed() throws InvalidKeyException, InvalidAlgorithmParameterException, IOException,
-			NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException {
-		
-		// Encrypt (not interesting in this example)
-		byte[] randomKey = createRandomArray(16);
-		byte[] randomIv = createRandomArray(16);		
-		byte[] originalPlaintext = "Confirm 100$ pay".getBytes("ASCII"); 	
-		byte[] originalCiphertext = encryptWithAesGcm(originalPlaintext, randomKey, randomIv);
-		
-		// Attack / alter ciphertext (an attacker would do this!) 
-		byte[] alteredCiphertext = Arrays.clone(originalCiphertext);		
-		alteredCiphertext[8] = (byte) (alteredCiphertext[8] ^ 0x08); // <<< Change 100$ to 900$
-		
-		// Decrypt with "fixed" JDK implementation of CipherInputStream
-		Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding", "BC");
-		cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(randomKey, "AES"), new IvParameterSpec(randomIv));
-		
-		try {
-			readFromStream(new QuickFixDemoCipherInputStream(new ByteArrayInputStream(alteredCiphertext), cipher));		
-			//             ^^^^^^^ INTERESTING PART ^^^^^^^^	
-			//
-			//  When Cipher.doFinal() is called in the QuickFixDemoCipherInputStream, a BadPaddingException
-			//  is thrown and passed to the application wrapped in a InvalidCiphertextIOException (inner 
-			//  class in QuickFixDemoCipherInputStream). This way, MAC verification errors can be detected. 
-			//  The code below is not executed.
-			//
-			
-			System.out.println("Test C: QuickFixDemoCipherInputStream:                       NOT OK, tampering not detected");				
-		}
-		catch (QuickFixDemoCipherInputStream.QuickFixDemoInvalidCipherTextIOException e) {
-			System.out.println("Test C: QuickFixDemoCipherInputStream:                       OK, tampering detected");				
-		}
-	}
 	
 	public static void testD_BouncyCastleCipherInputStreamWithAesGcm() throws InvalidKeyException, InvalidAlgorithmParameterException, IOException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException {
 		// Encrypt (not interesting in this example)
@@ -211,66 +183,157 @@ public class CipherInputStreamIssuesTests {
 		}
 	}	
 	
-	public static void testF_BouncyCastleFixedCipherInputStreamWithAesGcmLongPlaintextNoTampering() throws InvalidKeyException, InvalidAlgorithmParameterException, IOException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException {
+	public static void testH_JavaxCipherInputStreamWithAesGcmBadRead() throws InvalidKeyException, InvalidAlgorithmParameterException, IOException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IllegalAccessException, InvocationTargetException, NoSuchMethodException {
 		// Encrypt (not interesting in this example)
 		byte[] randomKey = createRandomArray(16);
 		byte[] randomIv = createRandomArray(16);		
-		byte[] originalPlaintext = createRandomArray(4080); // <<<< 4080 bytes fails, 4079 bytes works! 	
-		byte[] originalCiphertext = encryptWithAesGcm(originalPlaintext, randomKey, randomIv);
-		
-		// Decrypt with BouncyCastle implementation of CipherInputStream
-		AEADBlockCipher cipher = new GCMBlockCipher(new AESEngine()); 
-		cipher.init(false, new AEADParameters(new KeyParameter(randomKey), 128, randomIv));
-		
-		try {
-			byte[] decryptedPlaintext = readFromStream(new BcFixedCipherInputStream(new ByteArrayInputStream(originalCiphertext), cipher));
-			//             ^^^^^^^^^^^^^^^ INTERESTING PART ^^^^^^^^^^^^^^^^	
-			//
-			//  In this example, the BouncyCastle implementation of the CipherInputStream throws an ArrayIndexOutOfBoundsException.
-			//  The only difference to the example above is that the plaintext is now 4080 bytes long! For 4079 bytes plaintexts,
-			//  everything works just fine.
-
-			if (!Arrays.areEqual(originalPlaintext, decryptedPlaintext)) {
-				System.out.println("Test F: Fixed org.bouncycastle.crypto.io.CipherInputStream:  NOT OK, original plaintext does not match.");
-			}
-			else {
-				System.out.println("Test F: Fixed org.bouncycastle.crypto.io.CipherInputStream:  OK, throws no exception");
-			}
-		}
-		catch (IOException e) {
-			System.out.println("Test F: Fixed org.bouncycastle.crypto.io.CipherInputStream:  NOT OK, throws: "+e.getMessage());
-		}
-	}	 
-	
-	public static void testG_BouncyCastleFixedCipherInputStreamWithAesGcmLongPlaintextAndTampering() throws InvalidKeyException, InvalidAlgorithmParameterException, IOException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException {
-		// Encrypt (not interesting in this example)
-		byte[] randomKey = createRandomArray(16);
-		byte[] randomIv = createRandomArray(16);		
-		byte[] originalPlaintext = createRandomArray(4080); // <<<< 4080 bytes fails, 4079 bytes works! 	
+		byte[] originalPlaintext = "Confirm 100$ payment to an undisclosed receipient somewhere".getBytes("ASCII"); 		
 		byte[] originalCiphertext = encryptWithAesGcm(originalPlaintext, randomKey, randomIv);
 		
 		// Attack / alter ciphertext (an attacker would do this!) 
 		byte[] alteredCiphertext = Arrays.clone(originalCiphertext);		
-		alteredCiphertext[8] = (byte) (alteredCiphertext[8] ^ 0x08); // <<< Change 100$ to 900$		
+		alteredCiphertext[8] = (byte) (alteredCiphertext[8] ^ 0x08); // <<< Change 100$ to 900$			
+		
+		// Decrypt with regular CipherInputStream (from JDK6/7)
+		Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding", "BC");
+		cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(randomKey, "AES"), new IvParameterSpec(randomIv));
+		
+		try {
+			//                                         ^^^^^^^^ INTERESTING PART ^^^^^^^^	
+			//
+			//  The regular CipherInputStream in the javax.crypto package does not follow the verify MAC - then - decrypt
+			//  workflow (inverse of encrypt - then - MAC).
+			//  If bad client code reads from it and suppresses the verify MAC exception which is raised either by the read
+			//  of the last buffer or within close(), the stream leaks partial plaintext which may have been manipulated 
+			//  to the client (unless ciphertext was manipulated at the last buffer read).
+			//
+			byte[] decryptedPlaintext = readFromStreamBadClientCode(new javax.crypto.CipherInputStream(new ByteArrayInputStream(alteredCiphertext), cipher));
+			if ((decryptedPlaintext != null) && (decryptedPlaintext.length > 0)) {
+				System.out.println("Test H: javax.crypto.CipherInputStream:                      NOT OK, tampering detection suppressed AND partial plain text has leaked");
+				System.out.println("        - Original plaintext:                                - " + new String(originalPlaintext, "ASCII"));
+				System.out.println("        - Decrypted plaintext:                               - " + new String(decryptedPlaintext, "ASCII"));
+			} else {
+				System.out.println("Test H: javax.crypto.CipherInputStream:                      OK, tampering detection suppressed BUT NO partial plain text has leaked");
+			}
+		}
+		catch (Exception e) {
+			System.out.println("Test H: javax.crypto.CipherInputStream:                      OK, tampering detected");
+		}
+	}	
+
+	public static void testI_BouncyCastleCipherInputStreamWithAesGcmBadRead() throws InvalidKeyException, InvalidAlgorithmParameterException, IOException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException {
+		// Encrypt (not interesting in this example)
+		byte[] randomKey = createRandomArray(16);
+		byte[] randomIv = createRandomArray(16);		
+		byte[] originalPlaintext = "Confirm 100$ payment to an undisclosed receipient somewhere".getBytes("ASCII"); 		
+		byte[] originalCiphertext = encryptWithAesGcm(originalPlaintext, randomKey, randomIv);
+		
+		// Attack / alter ciphertext (an attacker would do this!) 
+		byte[] alteredCiphertext = Arrays.clone(originalCiphertext);		
+		alteredCiphertext[8] = (byte) (alteredCiphertext[8] ^ 0x08); // <<< Change 100$ to 900$
 		
 		// Decrypt with BouncyCastle implementation of CipherInputStream
 		AEADBlockCipher cipher = new GCMBlockCipher(new AESEngine()); 
 		cipher.init(false, new AEADParameters(new KeyParameter(randomKey), 128, randomIv));
 		
 		try {
-			readFromStream(new BcFixedCipherInputStream(new ByteArrayInputStream(alteredCiphertext), cipher));
-			//             ^^^^^^^^^^^^^^^ INTERESTING PART ^^^^^^^^^^^^^^^^	
+			//                                         ^^^^^^^^ INTERESTING PART ^^^^^^^^	
 			//
-			//  In this example, the the BouncyCastle implementation of 1.50 (will be updated in 1.51) of the 
-			//  CipherInputStream is used. It fixes the ArrayIndexOutOfBoundsException and now works also
-			//  for longer plaintexts. The code below is not executed.
-
-			System.out.println("Test G: Fixed org.bouncycastle.crypto.io.CipherInputStream:  NOT OK, tampering not detected");						
+			//  The CipherInputStream in the org.bouncycastle.crypto.io package does not follow the verify MAC - then - decrypt
+			//  workflow (inverse of encrypt - then - MAC).
+			//  If bad client code reads from it and suppresses the verify MAC exception which is raised either by the read
+			//  of the last buffer or within close(), the stream leaks partial plaintext which may have been manipulated 
+			//  to the client (unless ciphertext was manipulated at the last buffer read).
+			//
+			byte[] decryptedPlaintext = readFromStreamBadClientCode(new org.bouncycastle.crypto.io.CipherInputStream(new ByteArrayInputStream(alteredCiphertext), cipher));
+			if ((decryptedPlaintext != null) && (decryptedPlaintext.length > 0)) {
+				System.out.println("Test I: org.bouncycastle.crypto.io.CipherInputStream:        NOT OK, tampering detection suppressed AND partial plain text has leaked");
+				System.out.println("        - Original plaintext:                                - " + new String(originalPlaintext, "ASCII"));
+				System.out.println("        - Decrypted plaintext:                               - " + new String(decryptedPlaintext, "ASCII"));
+			} else {
+				System.out.println("Test I: org.bouncycastle.crypto.io.CipherInputStream:        OK, tampering detection suppressed BUT NO partial plain text has leaked");
+			}
 		}
-		catch (InvalidCipherTextIOException e) {
-			System.out.println("Test G: Fixed org.bouncycastle.crypto.io.CipherInputStream:  OK, tampering detected");
+		catch (Exception e) {
+			System.out.println("Test I: org.bouncycastle.crypto.io.CipherInputStream:                          OK, tampering detected");
 		}
-	}	
+	}
+	
+	public static void testJ_FullAEADSupportCipherInputStreamWithAesGcmBadRead() throws InvalidKeyException, InvalidAlgorithmParameterException, IOException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IllegalAccessException, InvocationTargetException, NoSuchMethodException {
+		// Encrypt (not interesting in this example)
+		byte[] randomKey = createRandomArray(16);
+		byte[] randomIv = createRandomArray(16);		
+		byte[] originalPlaintext = "Confirm 100$ payment to an undisclosed receipient somewhere".getBytes("ASCII"); 		
+		byte[] originalCiphertext = encryptWithAesGcm(originalPlaintext, randomKey, randomIv);
+		
+		// Attack / alter ciphertext (an attacker would do this!) 
+		byte[] alteredCiphertext = Arrays.clone(originalCiphertext);		
+		alteredCiphertext[8] = (byte) (alteredCiphertext[8] ^ 0x08); // <<< Change 100$ to 900$			
+		
+		// Decrypt with regular CipherInputStream (from JDK6/7)
+		Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding", "BC");
+		cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(randomKey, "AES"), new IvParameterSpec(randomIv));
+		
+		try {
+			//                                         ^^^^^^^^ INTERESTING PART ^^^^^^^^	
+			//
+			//  The suggested FullAEADSupportCipherInputStream follows to the letter the verify MAC - then - decrypt
+			//  workflow (inverse of encrypt - then - MAC).
+			//  If the underlying cipher works in an AEAD mode, and bad client code reads from the stream and suppresses the verify MAC 
+			//  exception which is raised either by the read of the last buffer or within close(), the stream does not leak partial 
+			//  plaintext but rather returns an empty byte array.
+			//
+			byte[] decryptedPlaintext = readFromStreamBadClientCode(new FullAEADSupportCipherInputStream(new ByteArrayInputStream(alteredCiphertext), cipher));
+			if ((decryptedPlaintext != null) && (decryptedPlaintext.length > 0)) {
+				System.out.println("Test J: FullAEADSupportCipherInputStream:                      NOT OK, tampering detection suppressed AND partial plain text has leaked");
+				System.out.println("        - Original plaintext:                                - " + new String(originalPlaintext, "ASCII"));
+				System.out.println("        - Decrypted plaintext:                               - " + new String(decryptedPlaintext, "ASCII"));
+			} else {
+				System.out.println("Test J: FullAEADSupportCipherInputStream:                      OK, tampering detection suppressed BUT NO partial plain text has leaked");
+			}
+		}
+		catch (Exception e) {
+			System.out.println("Test J: FullAEADSupportCipherInputStream:                          OK, tampering detected");
+		}
+	}
+	
+	public static void testK_FullAEADSupportCipherInputStreamWithAesGcm() throws InvalidKeyException, InvalidAlgorithmParameterException, IOException, NoSuchAlgorithmException, NoSuchProviderException, NoSuchPaddingException, IllegalAccessException, InvocationTargetException, NoSuchMethodException {
+		// Encrypt (not interesting in this example)
+		byte[] randomKey = createRandomArray(16);
+		byte[] randomIv = createRandomArray(16);		
+		byte[] originalPlaintext = "Confirm 100$ payment to an undisclosed receipient somewhere".getBytes("ASCII"); 		
+		byte[] originalCiphertext = encryptWithAesGcm(originalPlaintext, randomKey, randomIv);
+		
+		// Attack / alter ciphertext (an attacker would do this!) 
+		byte[] alteredCiphertext = Arrays.clone(originalCiphertext);		
+		alteredCiphertext[8] = (byte) (alteredCiphertext[8] ^ 0x08); // <<< Change 100$ to 900$			
+		
+		// Decrypt with regular CipherInputStream (from JDK6/7)
+		Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding", "BC");
+		cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(randomKey, "AES"), new IvParameterSpec(randomIv));
+		
+		try {
+			//                                         ^^^^^^^^ INTERESTING PART ^^^^^^^^	
+			//
+			//  The suggested FullAEADSupportCipherInputStream follows to the letter the verify MAC - then - decrypt
+			//  workflow (inverse of encrypt - then - MAC).
+			//  If the underlying cipher works in an AEAD mode, and good client code reads from the stream and does not suppress the verify MAC 
+			//  exception, the stream behaves as expected.
+			//  Note: if the underlying cipher doesn't work in an AEAD mode, the suggested FullAEADSupportCipherInputStream behaves like javax.crypto.CipherInputStream
+			//
+			byte[] decryptedPlaintext = readFromStream(new FullAEADSupportCipherInputStream(new ByteArrayInputStream(alteredCiphertext), cipher));
+			if ((decryptedPlaintext != null) && (decryptedPlaintext.length > 0)) {
+				System.out.println("Test K: FullAEADSupportCipherInputStream:                      NOT OK, tampering detection suppressed AND partial plain text has leaked");
+				System.out.println("        - Original plaintext:                                - " + new String(originalPlaintext, "ASCII"));
+				System.out.println("        - Decrypted plaintext:                               - " + new String(decryptedPlaintext, "ASCII"));
+			} else {
+				System.out.println("Test K: FullAEADSupportCipherInputStream:                      OK, tampering detection suppressed BUT NO partial plain text has leaked");
+			}
+		}
+		catch (Exception e) {
+			System.out.println("Test K: FullAEADSupportCipherInputStream:                      OK, tampering detected: " + e.getMessage());
+		}
+	}
 
 	private static byte[] readFromStream(InputStream inputStream) throws IOException {
 		ByteArrayOutputStream decryptedPlaintextOutputStream = new ByteArrayOutputStream(); 
@@ -283,6 +346,26 @@ public class CipherInputStreamIssuesTests {
 		}
 		
 		inputStream.close();
+		decryptedPlaintextOutputStream.close();
+		
+		return decryptedPlaintextOutputStream.toByteArray();  		
+	}
+	
+	private static byte[] readFromStreamBadClientCode(InputStream inputStream) throws IOException {
+		ByteArrayOutputStream decryptedPlaintextOutputStream = new ByteArrayOutputStream(); 
+		
+		int read = -1;
+		byte[] buffer = new byte[16];
+
+		try {
+			while (-1 != (read = inputStream.read(buffer))) {
+				decryptedPlaintextOutputStream.write(buffer, 0, read);
+			}
+			
+			inputStream.close();
+		} catch (IOException e) {
+			System.out.println("Bad client code - suppresses exception");
+		}
 		decryptedPlaintextOutputStream.close();
 		
 		return decryptedPlaintextOutputStream.toByteArray();  		
